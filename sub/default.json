@@ -43,11 +43,13 @@
   },
   "outbounds": [
     {
-      "tag": "direct",
       "protocol": "freedom",
       "settings": {
-        "domainStrategy": "UseIP"
-      }
+        "domainStrategy": "UseIP",
+        "noises": [],
+        "redirect": ""
+      },
+      "tag": "direct"
     },
     {
       "tag": "block",
@@ -74,7 +76,7 @@
     }
   },
   "routing": {
-    "domainStrategy": "AsIs",
+    "domainStrategy": "IPIfNonMatch",
     "rules": [
       {
         "type": "field",

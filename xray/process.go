@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"x-ui/config"
+	"x-ui/logger"
 	"x-ui/util/common"
 )
 
@@ -149,13 +150,14 @@ func (p *process) Start() (err error) {
 
 	defer func() {
 		if err != nil {
+			logger.Error("Failure in running xray-core process: ", err)
 			p.exitErr = err
 		}
 	}()
 
 	data, err := json.MarshalIndent(p.config, "", "  ")
 	if err != nil {
-		return common.NewErrorf("Failure to generate XRAY configuration files: %v", err)
+		return common.NewErrorf("Failed to generate XRAY configuration files: %v", err)
 	}
 	configPath := GetConfigPath()
 	err = os.WriteFile(configPath, data, fs.ModePerm)
@@ -172,6 +174,7 @@ func (p *process) Start() (err error) {
 	go func() {
 		err := cmd.Run()
 		if err != nil {
+			logger.Error("Failure in running xray-core: ", err)
 			p.exitErr = err
 		}
 	}()
@@ -187,4 +190,9 @@ func (p *process) Stop() error {
 		return errors.New("xray is not running")
 	}
 	return p.cmd.Process.Signal(syscall.SIGTERM)
+}
+
+func writeCrachReport(m []byte) error {
+	crashReportPath := config.GetBinFolderPath() + "/core_crash_" + time.Now().Format("20060102_150405") + ".log"
+	return os.WriteFile(crashReportPath, m, os.ModePerm)
 }

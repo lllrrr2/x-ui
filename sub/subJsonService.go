@@ -21,12 +21,14 @@ type SubJsonService struct {
 	configJson       map[string]interface{}
 	defaultOutbounds []json_util.RawMessage
 	fragment         string
+	noises           string
+	mux              string
 
 	inboundService service.InboundService
 	SubService     *SubService
 }
 
-func NewSubJsonService(fragment string, subService *SubService) *SubJsonService {
+func NewSubJsonService(fragment string, noises string, mux string, rules string, subService *SubService) *SubJsonService {
 	var configJson map[string]interface{}
 	var defaultOutbounds []json_util.RawMessage
 	json.Unmarshal([]byte(defaultJson), &configJson)
@@ -37,14 +39,30 @@ func NewSubJsonService(fragment string, subService *SubService) *SubJsonService 
 		}
 	}
 
+	if rules != "" {
+		var newRules []interface{}
+		routing, _ := configJson["routing"].(map[string]interface{})
+		defaultRules, _ := routing["rules"].([]interface{})
+		json.Unmarshal([]byte(rules), &newRules)
+		defaultRules = append(newRules, defaultRules...)
+		routing["rules"] = defaultRules
+		configJson["routing"] = routing
+	}
+
 	if fragment != "" {
 		defaultOutbounds = append(defaultOutbounds, json_util.RawMessage(fragment))
+	}
+
+	if noises != "" {
+		defaultOutbounds = append(defaultOutbounds, json_util.RawMessage(noises))
 	}
 
 	return &SubJsonService{
 		configJson:       configJson,
 		defaultOutbounds: defaultOutbounds,
 		fragment:         fragment,
+		noises:           noises,
+		mux:              mux,
 		SubService:       subService,
 	}
 }
@@ -115,7 +133,12 @@ func (s *SubJsonService) GetJson(subId string, host string) (string, string, err
 	}
 
 	// Combile outbounds
-	finalJson, _ := json.MarshalIndent(configArray, "", "  ")
+	var finalJson []byte
+	if len(configArray) == 1 {
+		finalJson, _ = json.MarshalIndent(configArray[0], "", "  ")
+	} else {
+		finalJson, _ = json.MarshalIndent(configArray, "", "  ")
+	}
 
 	header = fmt.Sprintf("upload=%d; download=%d; total=%d; expire=%d", traffic.Up, traffic.Down, traffic.Total, traffic.ExpiryTime/1000)
 	return string(finalJson), header, nil
@@ -174,6 +197,7 @@ func (s *SubJsonService) getConfig(inbound *model.Inbound, client model.Client, 
 		}
 		newConfigJson["outbounds"] = newOutbounds
 		newConfigJson["remarks"] = s.SubService.genRemark(inbound, client.Email, extPrxy["remark"].(string))
+
 		newConfig, _ := json.MarshalIndent(newConfigJson, "", "  ")
 		newJsonArray = append(newJsonArray, newConfig)
 	}
@@ -203,8 +227,9 @@ func (s *SubJsonService) streamData(stream string) map[string]interface{} {
 		streamSettings["tcpSettings"] = s.removeAcceptProxy(streamSettings["tcpSettings"])
 	case "ws":
 		streamSettings["wsSettings"] = s.removeAcceptProxy(streamSettings["wsSettings"])
+	case "httpupgrade":
+		streamSettings["httpupgradeSettings"] = s.removeAcceptProxy(streamSettings["httpupgradeSettings"])
 	}
-
 	return streamSettings
 }
 
@@ -277,6 +302,9 @@ func (s *SubJsonService) genVnext(inbound *model.Inbound, streamSettings json_ut
 
 	outbound.Protocol = string(inbound.Protocol)
 	outbound.Tag = "proxy"
+	if s.mux != "" {
+		outbound.Mux = json_util.RawMessage(s.mux)
+	}
 	outbound.StreamSettings = streamSettings
 	outbound.Settings = OutboundSettings{
 		Vnext: vnextData,
@@ -313,6 +341,9 @@ func (s *SubJsonService) genServer(inbound *model.Inbound, streamSettings json_u
 
 	outbound.Protocol = string(inbound.Protocol)
 	outbound.Tag = "proxy"
+	if s.mux != "" {
+		outbound.Mux = json_util.RawMessage(s.mux)
+	}
 	outbound.StreamSettings = streamSettings
 	outbound.Settings = OutboundSettings{
 		Servers: serverData,
@@ -326,7 +357,7 @@ type Outbound struct {
 	Protocol       string                 `json:"protocol"`
 	Tag            string                 `json:"tag"`
 	StreamSettings json_util.RawMessage   `json:"streamSettings"`
-	Mux            map[string]interface{} `json:"mux,omitempty"`
+	Mux            json_util.RawMessage   `json:"mux,omitempty"`
 	ProxySettings  map[string]interface{} `json:"proxySettings,omitempty"`
 	Settings       OutboundSettings       `json:"settings,omitempty"`
 }
